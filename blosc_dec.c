@@ -103,6 +103,10 @@ int main(int argc, char **argv) {
         return 1;
     }
 
+    if (getenv("BLOSC_NTHREADS") == NULL) {
+      fprintf(stderr, "\nBLOSC_NTHREADS not set, single theaded decoding!\n\n");
+    }
+
     // Open the Blosc compressed file for reading
     FILE* in_file = fopen(argv[1], "rb");
     if (!in_file) {
