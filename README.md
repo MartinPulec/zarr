@@ -13,5 +13,6 @@
 `S02MSIL0__20220803T144026_XXXX_XXXX_XXXX` / glacier
 - ZSTD (ostatni LZ4), u2 (ostatni float)
 - obrazek d03/b02/0.0
+- scale 0.3
 
-/bin/time -f '%E real,\n%U user,\n%S sys\n%P'
+/bin/time -f '%E real\n%U user\n%S sys\n%P'
