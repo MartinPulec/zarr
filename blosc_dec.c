@@ -13,8 +13,9 @@
 
 enum sample_type {
   NONE,
-  FLOAT,
   USHORT,
+  SHORT,
+  FLOAT,
 };
 
 struct zarr_info {
@@ -68,8 +69,12 @@ struct zarr_info get_info(const char *in_file) {
       struct json_value_s *val = a->value;
       assert(val->type == json_type_string);
       const char *type = json_value_as_string(val)->string;
+      assert(strlen(type) > 1);
+      assert(type[0] == '<');
       if (strcmp(type + 1, "u2") == 0) {
         ret.type = USHORT;
+      } else if (strcmp(type + 1, "i2") == 0) {
+        ret.type = SHORT;
       } else  if (strcmp(type + 1, "f4") == 0) {
         ret.type = FLOAT;
       } else {
@@ -126,6 +131,33 @@ static void process_ushort(bool dump, int count, float scale, void *dest,
         d_max = s;
       }
       printf("%hu ", s);
+    } else {
+      unsigned char c = s * scale;
+      putc(c, out_file);
+    }
+  }
+  if (dump) {
+    printf("\nMAX: %hu\n", d_max);
+    printf("MEAN: %llu\n", d_mean / count);
+  }
+}
+
+static void process_short(bool dump, int count, float scale, void *dest,
+                          FILE *out_file) {
+  short d_max = 0;
+  unsigned long long d_mean = 0;
+
+  // Write the decompressed data to stdout (or outfile)
+  short *val = dest;
+  short *end = val + count;
+  while (val < end) {
+    short s = *val++;
+    if (dump) {
+      d_mean += s;
+      if (s > d_max) {
+        d_max = s;
+      }
+      printf("%hd ", s);
     } else {
       unsigned char c = s * scale;
       putc(c, out_file);
@@ -208,10 +240,20 @@ int main(int argc, char **argv) {
       scale = atof(argv[3]);
       fprintf(out_file, "P5\n%d %d\n255\n", info.width, info.height);
     }
-    if (info.type == FLOAT) {
+    switch (info.type) {
+    case NONE:
+      abort();
+    case SHORT:
+      process_short(dump, bytes_written / sizeof(unsigned short), scale, dest,
+                     out_file);
+      break;
+    case USHORT:
+      process_ushort(dump, bytes_written / sizeof(unsigned short), scale, dest,
+                     out_file);
+      break;
+    case FLOAT:
       process_float(dump, bytes_written / sizeof(float), scale, dest, out_file);
-    } else {
-      process_ushort(dump, bytes_written / sizeof(unsigned short), scale, dest, out_file);
+      break;
     }
     // fwrite(dest, 1, bytes_written, out_file);
 
