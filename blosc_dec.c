@@ -1,43 +1,86 @@
 #include <assert.h>
 #include <blosc.h>
-#include <limits.h>
+#include <limits.h>   // for PATH_MAX
 #include <stdio.h>
+#include <stdlib.h>   // for abort, free, malloc, atof, getenv
 #include <string.h>
 #include <stdbool.h>
 #include <time.h>
 
+#include "json.h"
+
 #define ITER 1
 
 enum sample_type {
-    FLOAT,
-    USHORT,
-} get_type(const char *in_file) {
-    char buf[PATH_MAX];
-    snprintf(buf, sizeof buf, "%s", in_file);
-    char *last_del = strrchr(buf, '/');
-    if (last_del == NULL) {
-        abort();
-    }
-    last_del += 1;
-    snprintf(last_del, sizeof buf - (last_del - buf), "%s", ".zarray");
-    FILE *zarray = fopen(buf, "rb");
-    assert (zarray != NULL);
-    char line[1024];
-    while (fgets(line, sizeof line, zarray) != 0) {
-        char type[1024];
-        if (sscanf(line, " \"dtype\": \"%1000[^\"]", type) == 1) {
-            printf("TYPE: %s\n", type);
-            assert(type[0] == '<');
-            if (strcmp(type + 1, "u2") == 0) {
-                return USHORT;
-            }
-            if (strcmp(type + 1, "f4") == 0) {
-                return FLOAT;
-            }
-            abort();
-        }
-    }
+  NONE,
+  FLOAT,
+  USHORT,
+};
+
+struct zarr_info {
+  int width;
+  int height;
+  enum sample_type type;
+};
+
+struct zarr_info get_info(const char *in_file) {
+  char buf[PATH_MAX];
+  snprintf(buf, sizeof buf, "%s", in_file);
+  char *last_del = strrchr(buf, '/');
+  if (last_del == NULL) {
     abort();
+  }
+  last_del += 1;
+  snprintf(last_del, sizeof buf - (last_del - buf), "%s", ".zarray");
+
+  FILE *zarray = fopen(buf, "rb");
+  assert(zarray != NULL);
+
+  fseek(zarray, 0, SEEK_END);
+  const size_t filesize = ftell(zarray);
+  fseek(zarray, 0, SEEK_SET);
+  char *json = malloc(filesize);
+  int nread = fread(json, filesize, 1, zarray);
+  assert(nread == 1);
+  fclose(zarray);
+
+  struct zarr_info ret = {0};
+
+  struct json_value_s *root = json_parse(json, filesize);
+  assert(root != NULL && root->type == json_type_object);
+  struct json_object_s *object = (struct json_object_s *)root->payload;
+  struct json_object_element_s *a = object->start;
+  while (a != NULL) {
+    if (strcmp(a->name->string, "chunks") == 0) {
+      struct json_value_s *val = a->value;
+      assert(val->type == json_type_array);
+      struct json_array_s *array = (struct json_array_s *)val->payload;
+      assert(array->length == 2);
+      struct json_array_element_s *elem_height = array->start;
+      struct json_value_s *val_height = elem_height->value;
+      assert(val_height->type == json_type_number);
+      struct json_array_element_s *elem_width = elem_height->next;
+      struct json_value_s *val_width = elem_width->value;
+      assert(val_width->type == json_type_number);
+      ret.width = atoi(json_value_as_number(val_width)->number);
+      ret.height = atoi(json_value_as_number(val_height)->number);
+    } else if (strcmp(a->name->string, "dtype") == 0) {
+      struct json_value_s *val = a->value;
+      assert(val->type == json_type_string);
+      const char *type = json_value_as_string(val)->string;
+      if (strcmp(type + 1, "u2") == 0) {
+        ret.type = USHORT;
+      } else  if (strcmp(type + 1, "f4") == 0) {
+        ret.type = FLOAT;
+      } else {
+       abort();
+      }
+    }
+    a = a->next;
+  }
+  free(json);
+  assert(ret.width != 0 && ret.height != 0 && ret.type != NONE);
+  return ret;
 }
 
 static void process_float(bool dump, int count, float scale, void *dest,
@@ -113,7 +156,7 @@ int main(int argc, char **argv) {
         fprintf(stderr, "Error: Unable to open compressed file\n");
         return 1;
     }
-    enum sample_type type = get_type(argv[1]);
+    struct zarr_info info = get_info(argv[1]);
     fseek(in_file, 0, SEEK_END);
     size_t in_len = ftell(in_file);
     fseek(in_file, 0, SEEK_SET);
@@ -164,7 +207,7 @@ int main(int argc, char **argv) {
       assert(out_file != NULL);
       scale = atof(argv[3]);
     }
-    if (type == FLOAT) {
+    if (info.type == FLOAT) {
       process_float(dump, bytes_written / sizeof(float), scale, dest, out_file);
     } else {
       process_ushort(dump, bytes_written / sizeof(unsigned short), scale, dest, out_file);
