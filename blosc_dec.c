@@ -14,6 +14,7 @@
 enum sample_type {
   NONE,
   USHORT,
+  UCHAR,
   SHORT,
   FLOAT,
 };
@@ -70,8 +71,10 @@ struct zarr_info get_info(const char *in_file) {
       assert(val->type == json_type_string);
       const char *type = json_value_as_string(val)->string;
       assert(strlen(type) > 1);
-      assert(type[0] == '<');
-      if (strcmp(type + 1, "u2") == 0) {
+      assert(type[0] == '<' || type[0] == '|');
+      if (strcmp(type + 1, "u1") == 0) {
+        ret.type = UCHAR;
+      } else if (strcmp(type + 1, "u2") == 0) {
         ret.type = USHORT;
       } else if (strcmp(type + 1, "i2") == 0) {
         ret.type = SHORT;
@@ -243,6 +246,8 @@ int main(int argc, char **argv) {
     switch (info.type) {
     case NONE:
       abort();
+    case UCHAR:
+      fwrite(dest, 1, bytes_written, out_file);
     case SHORT:
       process_short(dump, bytes_written / sizeof(unsigned short), scale, dest,
                      out_file);
@@ -255,7 +260,6 @@ int main(int argc, char **argv) {
       process_float(dump, bytes_written / sizeof(float), scale, dest, out_file);
       break;
     }
-    // fwrite(dest, 1, bytes_written, out_file);
 
     // Close files and free memory
     if (out_file != NULL) {
