@@ -206,6 +206,7 @@ int main(int argc, char **argv) {
       out_file = fopen(argv[2], "wb");
       assert(out_file != NULL);
       scale = atof(argv[3]);
+      fprintf(out_file, "P5\n%d %d\n255\n", info.width, info.height);
     }
     if (info.type == FLOAT) {
       process_float(dump, bytes_written / sizeof(float), scale, dest, out_file);
